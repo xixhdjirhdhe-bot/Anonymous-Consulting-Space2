@@ -1,32 +1,45 @@
 // ไฟล์: api/notify.js
 export default async function handler(req, res) {
-    // อนุญาตเฉพาะการส่งข้อมูลแบบ POST
+    // 1. อนุญาตเฉพาะการส่งข้อมูลแบบ POST
     if (req.method !== 'POST') {
         return res.status(405).send('Method Not Allowed');
     }
 
-    // รับข้อความที่ส่งมาจากหน้าเว็บ
-    const { message } = req.body;
+    // 2. ตอบกลับสถานะ 200 ให้ LINE ทันที เพื่อให้ผ่านการ Verify และไม่ขึ้น Error 500
+    res.status(200).send('OK');
+
+    // 3. ดึงข้อมูลเหตุการณ์ (Events) ที่ LINE ส่งมา
+    const events = req.body.events || [];
+    if (events.length === 0) return;
+
+    const event = events[0];
     
-    // นำ Token ที่คัดลอกมาจากเว็บ LINE Notify มาวางในเครื่องหมายคำพูดด้านล่างนี้
-    const LINE_TOKEN = 'OwQnZfP78CucoDsReSFMOZroVrlwhhyKokJ3hY67OnHYHbKErQ3nzm6hBrjC1J0h4CqAoDN5uMlH0YKlxH1vQrRVikFa2p0lN0V581ENNvNfpPTQ+Gyz9RUYsXHYB6+pR1PJ46PXulbTJU9gf3S21AdB04t89/1O/w1cDnyilFU=';
+    // เช็กว่าเป็นข้อความตัวอักษรที่คนพิมพ์เข้ามาหรือไม่
+    if (event.type === 'message' && event.message.type === 'text') {
+        const replyToken = event.replyToken;
+        const userMessage = event.message.text; // ข้อความที่ผู้ใช้พิมพ์มา
 
-    try {
-        const response = await fetch('https://notify-api.line.me/api/notify', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': `Bearer ${LINE_TOKEN}`
-            },
-            body: new URLSearchParams({ message: message })
-        });
+        // ตั้งค่าข้อความที่จะตอบกลับ (ตัวอย่าง: พิมพ์อะไรมา บอตจะตอบกลับคำเดิม)
+        const replyText = `สภานักเรียนได้รับข้อความ "${userMessage}" เรียบร้อยแล้วค่ะ`;
 
-        if (response.ok) {
-            res.status(200).json({ success: true });
-        } else {
-            res.status(response.status).json({ error: 'Failed to send to LINE' });
+        // ดึงค่า Channel Access Token จาก Environment Variables ของ Vercel
+        const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+
+        try {
+            // ส่งข้อความกลับไปหาผู้ใช้ผ่าน LINE API
+            await fetch('https://api.line.me/v2/bot/message/reply', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${channelAccessToken}`
+                },
+                body: JSON.stringify({
+                    replyToken: replyToken,
+                    messages: [{ type: 'text', text: replyText }]
+                })
+            });
+        } catch (error) {
+            console.error('Error replying to LINE:', error);
         }
-    } catch (error) {
-        res.status(500).json({ error: error.message });
     }
 }
